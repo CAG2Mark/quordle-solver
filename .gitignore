@@ -1,0 +1,4 @@
+*.7z
+guess_table
+.vscode/*
+__pycache__/*
