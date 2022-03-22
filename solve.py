@@ -1,4 +1,5 @@
 from collections import defaultdict
+from tkinter import W
 import numpy as np
 
 guess_table = None
@@ -7,6 +8,7 @@ class Solver:
     def __init__(self, N):
         self.N = N
         self.first = True
+        self.skip = set()
 
         global guess_table
 
@@ -29,6 +31,7 @@ class Solver:
                     
                     for i, result in enumerate(contents):
                         guess_table[answers[i]][first_entry] = result
+                del answers
                     
         with open("words") as word_f:
             self.words_all = np.array([x.strip() for x in word_f.readlines()])
@@ -39,13 +42,27 @@ class Solver:
         self.words_possible = [np.array(words_possible) for _ in range(N)]
         self.solved = [False]*N
 
+    # also returns the actual information gained
     def filter_word(self, guess_word, responses):
         self.first = False
         # 0 = wrong
         # 1 = correct, wrong pos
         # 2 = correct
 
+        information = 0
+        for i, possible_words in enumerate(self.words_possible):
+            if i in self.skip: continue
+
+            probs = np.zeros(243)
+            for possible in possible_words:
+                res = int(guess_table[possible][guess_word], 3)
+                probs[res] += 1
+            probs /= probs.sum()
+            information += -np.log2(probs[int(''.join([str(x) for x in responses[i]]), 3)])
+
         for i in range(self.N):
+            if i in self.skip: continue
+
             possible_list = self.words_possible[i]
             response = responses[i]
 
@@ -59,6 +76,12 @@ class Solver:
             if len(bool_arr) == 0: continue
 
             self.words_possible[i] = possible_list[bool_arr]
+
+        for i, r in enumerate(responses):
+            if sum(r) == 10: 
+                self.skip.add(i)
+            
+        return information
          
     @staticmethod
     def is_word_ok(word, guess_word, response, chars):
@@ -87,9 +110,9 @@ class Solver:
         probs = probs[probs != 0]
         # Calculate information
         information = -np.log2(probs)
-        # Calculate expected information
-        expected_info = np.sum(probs * information)
-        return expected_info
+        # Calculate expected information / entropy
+        entropy = np.sum(probs * information)
+        return entropy
 
     def get_best_guess_quality(self):
         guess = self.get_best_guess()
@@ -98,24 +121,25 @@ class Solver:
 
     def get_best_guess(self):
         if self.first:
-            return "crane"
+            return "soare"
         # Check if any are solved.
         solved = -1
         for i in range(self.N):
+            if i in self.skip: continue
+
             if len(self.words_possible[i]) == 1:
                 solved = i
                 break
         if solved != -1:
             word = self.words_possible[i][0]
-            del self.words_possible[i]
-            self.N -= 1
             return word
 
         max_info = 0
         best = ""
         for w in self.words_all:
             total_info = 0
-            for l in self.words_possible:
+            for i, l in enumerate(self.words_possible):
+                if i in self.skip: continue
                 total_info += self.compute_guess_quality(w, l)
             if total_info > max_info: 
                 max_info = total_info
